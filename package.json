@@ -1,5 +1,5 @@
 {
-  "name": "template",
+  "name": "cds-websocket",
   "version": "0.0.1",
   "main": "lib/index.js",
   "engines": {
@@ -28,5 +28,14 @@
     "ts-jest": "29.0.5",
     "ts-node": "10.9.1",
     "typescript": "4.9.4"
-  }
+  },
+  "author": {
+    "name": "Theo Sun",
+    "email": "theo.sun@outlook.com"
+  },
+  "keywords": [
+    "cds",
+    "websocket"
+  ],
+  "license": "MIT"
 }
