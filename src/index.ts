@@ -17,11 +17,22 @@ function _message_dispatcher(this: WebSocket, rawData: Buffer, isRaw: boolean) {
   this.emit(event, data);
 }
 
+/**
+ * get a random client from current all clients
+ * 
+ * @returns 
+ */
 function getRandomWsClient() {
   const idx = Math.floor(Math.random() * (cds.wss.clients.size - 1));
   return Array.from(cds.wss.clients.values()).at(idx) as WebSocket;
 }
 
+/**
+ * get target clients by event definition `@cds.websocket.target`
+ * 
+ * @param ev 
+ * @returns 
+ */
 function getClientsForEvent(ev: EventDefinition) {
   let clients: Set<WebSocket> = new Set();
   const target = ev[ANNOTATION_CDS_WEBSOCKET_TARGET];
@@ -41,7 +52,7 @@ function getClientsForEvent(ev: EventDefinition) {
       }
       break;
     default:
-      logger.warn("inbound target", target, "is NOT supported");
+      logger.warn("outbound target", target, "is NOT supported");
       break;
   }
   return clients;
@@ -84,6 +95,8 @@ function mountHandlersForService(service: Service) {
         if (clients.size === 0) { return; }
         return Promise.all(
           Array.from(clients).map(client => new Promise<void>((resolve, reject) => {
+            // TODO: retry
+            // TODO: more information like id
             return client.send(
               JSON.stringify({
                 event: ev.name,
