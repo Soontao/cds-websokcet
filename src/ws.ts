@@ -88,7 +88,7 @@ export function _serve_ws_events(service: Service) {
       service.on(
         evName as any,
         function _outbound_event_handler(req) {
-          const clients: Set<WebSocket> = getClientsForEvent(ev);
+          const clients: Set<WebSocket> = _get_client_ws(ev);
           logger.debug("send message to", clients.size, "clients");
           if (clients.size === 0) { return; }
 
@@ -122,13 +122,13 @@ export function _serve_ws_events(service: Service) {
  * @param ev 
  * @returns 
  */
-export function getClientsForEvent(ev: EventDefinition) {
+export function _get_client_ws(ev: EventDefinition) {
   const cds = cwdRequireCDS();
   let clients: Set<WebSocket> = new Set();
   const target = ev[ANNOTATION_CDS_WEBSOCKET_TARGET];
   switch (target) {
     case "random":
-      clients = new Set([getRandomWsClient()]);
+      clients = new Set([_get_random_client()]);
       break;
     case "broadcast":
       clients = cds.wss.clients;
@@ -138,7 +138,7 @@ export function getClientsForEvent(ev: EventDefinition) {
         clients = new Set([cds.context.__ws_client]);
       }
       else {
-        clients = new Set([getRandomWsClient()]);
+        clients = new Set([_get_random_client()]);
       }
       break;
     default:
@@ -151,12 +151,11 @@ export function getClientsForEvent(ev: EventDefinition) {
 
 
 /**
- * get a random client from current all clients
+ * get a random client from current (websocket server) all clients ws
  * 
  * @returns 
  */
-function getRandomWsClient() {
-  const cds = cwdRequireCDS();
+function _get_random_client() {
   const idx = Math.floor(Math.random() * (cds.wss.clients.size - 1));
   return Array.from(cds.wss.clients.values()).at(idx) as WebSocket;
 }
