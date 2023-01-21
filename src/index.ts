@@ -1,126 +1,49 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable camelcase */
-import { cwdRequireCDS, EventDefinition, Service } from "cds-internal-tool";
-import { WebSocket, WebSocketServer } from "ws";
-import {
-  ANNOTATION_CDS_WEBSOCKET_ENABLED, ANNOTATION_CDS_WEBSOCKET_INBOUND,
-  ANNOTATION_CDS_WEBSOCKET_OUTBOUND, ANNOTATION_CDS_WEBSOCKET_TARGET
-} from "./constants";
+import { cwdRequireCDS } from "cds-internal-tool";
+import url from "url";
+import { ANNOTATION_CDS_WEBSOCKET_ENABLED } from "./constants";
 import "./types";
+import { CDSWebSocket, CDSWebSocketServer, _serve_ws_events, _service_message_dispatcher } from "./ws";
 
 const cds = cwdRequireCDS();
 const logger = cds.log("ws");
 
-function _message_dispatcher(this: WebSocket, rawData: Buffer, isRaw: boolean) {
-  // TODO: log error when raw
-  const { event, data } = JSON.parse(rawData.toString("utf-8"));
-  this.emit(event, data);
-}
-
-/**
- * get a random client from current all clients
- * 
- * @returns 
- */
-function getRandomWsClient() {
-  const idx = Math.floor(Math.random() * (cds.wss.clients.size - 1));
-  return Array.from(cds.wss.clients.values()).at(idx) as WebSocket;
-}
-
-/**
- * get target clients by event definition `@cds.websocket.target`
- * 
- * @param ev 
- * @returns 
- */
-function getClientsForEvent(ev: EventDefinition) {
-  let clients: Set<WebSocket> = new Set();
-  const target = ev[ANNOTATION_CDS_WEBSOCKET_TARGET];
-  switch (target) {
-    case "random":
-      clients = new Set([getRandomWsClient()]);
-      break;
-    case "broadcast":
-      clients = cds.wss.clients;
-      break;
-    case "context": case undefined:
-      if (cds.context?.__ws_client) {
-        clients = new Set([cds.context.__ws_client]);
-      }
-      else {
-        clients = new Set([getRandomWsClient()]);
-      }
-      break;
-    default:
-      logger.warn("outbound target", target, "is NOT supported");
-      break;
-  }
-  return clients;
-}
-
-function mountHandlersForService(service: Service) {
-  // REVISIT: upgrade for path
-  for (const ev of service.events()) {
-    const evName = ev.name.slice(service.name.length + 1);
-    // TODO: not possible annotated with both inbound and outbound
-    if (ev[ANNOTATION_CDS_WEBSOCKET_INBOUND]) {
-      logger.debug(
-        "listen inbound event", ev.name,
-        "for service", service.name
-      );
-      cds.wss?.on("connection", function _inbound_event_handler(ws) {
-        ws.on(ev.name, (data) => {
-          // TODO: tenant
-          // TODO: id
-          cds.spawn({}, () => {
-            if (cds.context) {
-              cds.context.__ws_client = ws;
-            }
-            return service.emit(evName, data);
-          });
-        });
-      });
-    }
-
-    if (ev[ANNOTATION_CDS_WEBSOCKET_OUTBOUND]) {
-      logger.debug(
-        "impl outbound event", ev.name,
-        "for service", service.name
-      );
-
-      // TODO: validate the target type
-      service.on(evName as any, function _outbound_event_handler(req) {
-        const clients: Set<WebSocket> = getClientsForEvent(ev);
-        logger.debug("send message to", clients.size, "clients");
-        if (clients.size === 0) { return; }
-        return Promise.all(
-          Array.from(clients).map(client => new Promise<void>((resolve, reject) => {
-            // TODO: retry
-            // TODO: more information like id
-            return client.send(
-              JSON.stringify({
-                event: ev.name,
-                data: req.data
-              }),
-              (err) => err === undefined ? resolve() : reject(err)
-            );
-          }))
-        );
-
-      });
-    }
-
-  }
-}
-
 
 cds.once("listening", ({ server }) => {
-  cds.wss = new WebSocketServer({ server });
-  cds.wss.on("connection", (ws) => { ws.on("message", _message_dispatcher); });
+  const wss = cds.wss = new CDSWebSocketServer({ noServer: true });
+  wss.on("connection", (ws: CDSWebSocket) => { ws.on("message", _service_message_dispatcher(ws) as any); });
+
+  server.on("upgrade", function _handleUpgrade(req, socket, head) {
+    if (req.url) {
+      const { pathname } = url.parse(req.url);
+      if (pathname !== null && wss.hasServicePath(pathname)) {
+        const service = wss.getServiceByPath(pathname);
+        wss.handleUpgrade(req, socket, head, function (ws: CDSWebSocket) {
+          ws.__cds_service = service!;
+          wss.emit("connection", ws, req);
+        } as unknown as any);
+        return;
+      }
+    }
+
+    logger.error("unexpected request", req.url);
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.destroy();
+  });
 
   for (const service of cds.services) {
     if (service?.definition?.[ANNOTATION_CDS_WEBSOCKET_ENABLED] === true) {
-      mountHandlersForService(service);
+      if (service.path) {
+        logger.info("serving webscoket", service.name);
+        wss.registerService(service);
+        _serve_ws_events(service);
+      }
+      else {
+        logger.warn("service", service.name, "do not have path, so cannot handled by websocket");
+      }
     }
   }
 });

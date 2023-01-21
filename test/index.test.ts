@@ -21,12 +21,18 @@ describe("Index Test Suite", () => {
       new Promise<void>(
         (resolve, reject) =>
           ws.send(
-            JSON.stringify({ event: "test.app.srv.MyService.ping" }),
+            JSON.stringify({ event: "ping" }),
             (err) => err === undefined ? resolve() : reject(err)
           )
       ),
     ])
     ws.close()
+  });
+
+
+  it('should raise error when not support websocket', async () => {
+    const ws = new WebSocket(`ws://${axios.defaults!.baseURL!.slice(7)}/newapp`)
+    await expect(new Promise((resolve, reject) => ws.on("error", reject))).rejects.toThrowError("Unexpected server response: 400")
   });
 
 });

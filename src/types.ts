@@ -1,10 +1,18 @@
-import type { WebSocket, WebSocketServer } from "ws";
+import type { WebSocket } from "ws";
+
+import { CDSWebSocketServer } from "./ws";
 
 declare module "cds-internal-tool" {
-  interface CDS {
-    wss: WebSocketServer;
+  interface Service {
+    path?: string;
   }
+
+  interface CDS {
+    wss: CDSWebSocketServer;
+  }
+
   interface EventContext {
     __ws_client?: WebSocket
   }
 }
+
